@@ -10,7 +10,8 @@
       <h2>直近の予定</h2>
       <p v-if="upcomingTasks.length === 0">まだ予定はないよ！</p>
       <ul v-else class="taskList">
-        <li v-for="task in upcomingTasks" :key="task.id" class="taskRow">
+        <li v-for="task in upcomingTasks" :key="task.id" class="taskRow"
+          :class="{ todayTask: task.date === todayString }">
           <span class="taskText">
             {{ formatRelative(task.date) }} / {{ task.subject }}（{{ task.type }}）
           </span>
@@ -22,12 +23,27 @@
 
     <!-- カレンダー -->
     <section class="card">
-      <h2>{{ currentYear }}年 {{ currentMonth }}月</h2>
+      <div class="calendar-header">
+        <h2>{{ currentYear }}年 {{ currentMonth }}月</h2>
+        <div class="calendar-actions">
+          <button class="month-btn" type="button" @click="goPrevMonth">‹</button>
+          <button class="month-btn" type="button" @click="goNextMonth">›</button>
+        </div>
+      </div>
+      <div class="calendar-weekdays">
+        <span v-for="(label, index) in weekdayLabels" :key="label"
+          class="weekday" :class="{ sunday: index === 0, saturday: index === 6 }">
+          {{ label }}
+        </span>
+      </div>
       <div class="calendar">
-        <button v-for="day in daysInMonth" :key="day" class="day"
-          :class="{ selected: selectedDay === day, today: day === todayDay }"
-          @click="selectedDay = day">
-          {{ day }}
+        <button v-for="(day, index) in calendarDays" :key="`${currentYear}-${currentMonth}-${index}`" class="day"
+          :class="{
+            selected: day !== null && selectedDay === day,
+            today: day !== null && isCurrentMonth && day === todayDay,
+            empty: day === null
+          }" :disabled="day === null" @click="day !== null && (selectedDay = day)">
+          {{ day ?? '' }}
         </button>
       </div>
     </section>
@@ -50,7 +66,8 @@
         <button class="manage-link" type="button" @click="openSubjectManageModal">科目を管理</button>
       </div>
       <div class="subject-grid">
-        <button v-for="subject in subjects" :key="subject.id" class="subject-btn" @click="openTypeMenu(subject)">
+        <button v-for="subject in subjects" :key="subject.id" class="subject-btn"
+          @click="openTypeMenu(subject, $event)">
           <span class="icon">{{ subject.emoji }}</span>
           <span class="label">{{ subject.name }}</span>
         </button>
@@ -61,16 +78,16 @@
       </div>
     </section>
 
-    <!-- 種別選択の簡単モーダル -->
-    <div v-if="typeMenuSubject" class="type-menu-backdrop" @click="closeTypeMenu">
-      <div class="type-menu" @click.stop>
-        <h3>{{ typeMenuSubject.name }} の予定を追加</h3>
-        <button v-for="t in taskTypes" :key="t" @click="addTask(typeMenuSubject, t)">
-          {{ t }} を追加
+    <!-- 種別選択バブル -->
+    <Teleport to="body">
+      <div v-if="typeMenuSubject" class="type-menu-overlay" @click="closeTypeMenu"></div>
+      <div v-if="typeMenuSubject" class="type-menu-bubble" :style="typeMenuStyle" @click.stop>
+        <button v-for="t in taskTypes" :key="t" class="type-chip" type="button"
+          @click="addTask(typeMenuSubject, t)">
+          {{ t }}
         </button>
-        <button class="cancel" @click="closeTypeMenu">キャンセル</button>
       </div>
-    </div>
+    </Teleport>
 
     <!-- 科目追加モーダル -->
     <div v-if="isSubjectModalOpen" class="subject-menu-backdrop" @click="closeSubjectModal">
@@ -131,12 +148,20 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 const today = new Date()
-const currentYear = today.getFullYear()
-const currentMonth = today.getMonth() + 1
-const daysInMonth = new Date(currentYear, currentMonth, 0).getDate()
+const todayYear = today.getFullYear()
+const todayMonth = today.getMonth() + 1
 const todayDay = today.getDate()
 
-const selectedDay = ref(today.getDate())
+const currentYear = ref(todayYear)
+const currentMonth = ref(todayMonth)
+const daysInMonth = computed(() =>
+  new Date(currentYear.value, currentMonth.value, 0).getDate()
+)
+
+const selectedDay = ref(todayDay)
+const isCurrentMonth = computed(
+  () => currentYear.value === todayYear && currentMonth.value === todayMonth
+)
 
 type Subject = {
   id: string
@@ -144,7 +169,7 @@ type Subject = {
   emoji: string
 }
 
-// 科目の初期データ（あとで増やしたり名前変えてOK）
+// 科目の初期データ
 const defaultSubjects: Subject[] = [
   { id: 'denji', name: '電磁気学', emoji: '⚡' },
   { id: 'yuukagaku', name: '有機化学', emoji: '🧪' },
@@ -154,13 +179,14 @@ const defaultSubjects: Subject[] = [
 
 const subjects = ref<Subject[]>([...defaultSubjects])
 
-const taskTypes = ['授業', 'レポート', 'テスト']
+const taskTypes = ['補講', '課題', '試験']
+const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土']
 
 const emojiOptions = ['📘', '📗', '📙', '📕', '🧪', '⚡', '🧠', '🧮', '📝', '🛠️', '💻', '🌎']
 const isSubjectModalOpen = ref(false)
 const isSubjectManageOpen = ref(false)
 const newSubjectName = ref('')
-const newSubjectEmoji = ref(emojiOptions[0])
+const newSubjectEmoji = ref(emojiOptions[0] ?? '📘')
 
 type Task = {
   id: string
@@ -178,11 +204,21 @@ const SUBJECTS_STORAGE_KEY = 'task-manager-subjects'
 onMounted(() => {
   const saved = localStorage.getItem(STORAGE_KEY)
   if (saved) {
-    tasks.value = JSON.parse(saved)
+    try {
+      tasks.value = JSON.parse(saved)
+    } catch (error) {
+      console.warn('Failed to parse saved tasks.', error)
+      localStorage.removeItem(STORAGE_KEY)
+    }
   }
   const savedSubjects = localStorage.getItem(SUBJECTS_STORAGE_KEY)
   if (savedSubjects) {
-    subjects.value = JSON.parse(savedSubjects)
+    try {
+      subjects.value = JSON.parse(savedSubjects)
+    } catch (error) {
+      console.warn('Failed to parse saved subjects.', error)
+      localStorage.removeItem(SUBJECTS_STORAGE_KEY)
+    }
   }
 })
 
@@ -202,19 +238,26 @@ watch(
   { deep: true }
 )
 
+watch([currentYear, currentMonth], () => {
+  const maxDay = daysInMonth.value
+  if (selectedDay.value > maxDay) {
+    selectedDay.value = maxDay
+  }
+})
+
 const selectedDateString = computed(
   () =>
-    `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(
+    `${currentYear.value}-${String(currentMonth.value).padStart(2, '0')}-${String(
       selectedDay.value
     ).padStart(2, '0')}`
 )
 
-const todayString = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(
-  today.getDate()
+const todayString = `${todayYear}-${String(todayMonth).padStart(2, '0')}-${String(
+  todayDay
 ).padStart(2, '0')}`
 
 const selectedLabel = computed(
-  () => `${currentYear}年${currentMonth}月${selectedDay.value}日 の予定`
+  () => `${currentYear.value}年${currentMonth.value}月${selectedDay.value}日 の予定`
 )
 
 const selectedDayTasks = computed(() =>
@@ -228,6 +271,31 @@ const upcomingTasks = computed(() => {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 3)
 })
+
+const calendarDays = computed(() => {
+  const firstWeekday = new Date(currentYear.value, currentMonth.value - 1, 1).getDay()
+  const blanks = Array.from({ length: firstWeekday }, () => null)
+  const days = Array.from({ length: daysInMonth.value }, (_, i) => i + 1)
+  return [...blanks, ...days]
+})
+
+function goPrevMonth() {
+  if (currentMonth.value === 1) {
+    currentMonth.value = 12
+    currentYear.value -= 1
+  } else {
+    currentMonth.value -= 1
+  }
+}
+
+function goNextMonth() {
+  if (currentMonth.value === 12) {
+    currentMonth.value = 1
+    currentYear.value += 1
+  } else {
+    currentMonth.value += 1
+  }
+}
 
 
 function formatRelative(dateStr: string) {
@@ -245,7 +313,7 @@ function openSubjectModal() {
   isSubjectManageOpen.value = false
   isSubjectModalOpen.value = true
   newSubjectName.value = ''
-  newSubjectEmoji.value = emojiOptions[0]
+  newSubjectEmoji.value = emojiOptions[0] ?? '📘'
 }
 
 function closeSubjectModal() {
@@ -284,13 +352,44 @@ function removeSubject(subjectId: string) {
 
 // 種別メニュー
 const typeMenuSubject = ref<Subject | null>(null)
+const typeMenuPosition = ref<{
+  top: number
+  left: number
+  placement: 'right' | 'left'
+} | null>(null)
 
-function openTypeMenu(subject: Subject) {
+const typeMenuStyle = computed(() => {
+  if (!typeMenuPosition.value) return {}
+  const { top, left, placement } = typeMenuPosition.value
+  return {
+    top: `${top}px`,
+    left: `${left}px`,
+    transform: placement === 'right'
+      ? 'translate(8px, -50%)'
+      : 'translate(calc(-100% - 8px), -50%)'
+  }
+})
+
+function openTypeMenu(subject: Subject, event: MouseEvent) {
+  const target = event.currentTarget as HTMLElement | null
+  if (target) {
+    const rect = target.getBoundingClientRect()
+    const bubbleWidth = 140
+    const spaceRight = window.innerWidth - rect.right
+    const placement =
+      spaceRight < bubbleWidth && rect.left > spaceRight ? 'left' : 'right'
+    typeMenuPosition.value = {
+      top: rect.top + rect.height / 2,
+      left: placement === 'right' ? rect.right : rect.left,
+      placement
+    }
+  }
   typeMenuSubject.value = subject
 }
 
 function closeTypeMenu() {
   typeMenuSubject.value = null
+  typeMenuPosition.value = null
 }
 
 function addTask(subject: Subject, type: string) {
@@ -332,21 +431,6 @@ function removeTask(taskId: string) {
   gap: 16px;
   font-family: 'M PLUS Rounded 1c', 'Noto Sans JP', 'Yu Gothic UI', sans-serif;
   color: var(--ink);
-  background: linear-gradient(180deg, #f5f4f1 0%, #ffffff 40%, #ffffff 100%);
-  position: relative;
-}
-
-.page::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 18% 12%, rgba(255, 240, 226, 0.7), transparent 48%);
-  pointer-events: none;
-}
-
-.page > * {
-  position: relative;
-  z-index: 1;
 }
 
 .header h1 {
@@ -375,6 +459,35 @@ function removeTask(taskId: string) {
   letter-spacing: 0.02em;
 }
 
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.calendar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.month-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.month-btn:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
 .card p {
   margin: 0 0 6px;
   font-size: 12px;
@@ -401,6 +514,28 @@ function removeTask(taskId: string) {
   background: var(--surface);
 }
 
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+}
+
+.weekday {
+  padding: 2px 0;
+}
+
+.weekday.sunday {
+  color: #e06b6b;
+}
+
+.weekday.saturday {
+  color: #5a8fd8;
+}
+
 .day {
   min-height: 32px;
   border-radius: 0;
@@ -421,6 +556,12 @@ function removeTask(taskId: string) {
   color: var(--accent-strong);
   font-weight: 700;
   box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.day.empty {
+  cursor: default;
+  color: transparent;
+  background: var(--surface);
 }
 
 .day.today {
@@ -505,45 +646,41 @@ function removeTask(taskId: string) {
   font-size: 22px;
 }
 
-/* 種別メニュー */
-.type-menu-backdrop {
+/* 種別選択バブル */
+.type-menu-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: rgba(0, 0, 0, 0.08);
+  z-index: 30;
 }
 
-.type-menu {
-  background: var(--surface);
-  padding: 16px;
-  border-radius: 16px;
-  min-width: 240px;
+.type-menu-bubble {
+  position: fixed;
+  z-index: 40;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
+  padding: 10px 8px;
+  border-radius: 16px;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #dddddd);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+  color: var(--ink, #1f1f1f);
+  opacity: 1;
 }
 
-.type-menu h3 {
-  font-size: 14px;
-  margin-bottom: 4px;
-}
-
-.type-menu button {
+.type-chip {
+  min-width: 72px;
+  padding: 6px 12px;
   border-radius: 999px;
-  border: none;
-  padding: 8px 12px;
+  border: 1px solid var(--border, #dddddd);
+  background: var(--surface, #ffffff);
+  color: var(--ink, #1f1f1f);
+  font-size: 12px;
   cursor: pointer;
-  background: var(--surface-muted);
-  border: 1px solid var(--border);
-}
-
-.type-menu button.cancel {
-  background: #eeeeee;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+  animation: bubbleIn 160ms ease-out both;
 }
 
 /* 科目追加モーダル */
@@ -555,6 +692,7 @@ function removeTask(taskId: string) {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 30;
 }
 
 .subject-menu {
@@ -648,6 +786,7 @@ function removeTask(taskId: string) {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 30;
 }
 
 .subject-manage {
@@ -725,6 +864,11 @@ function removeTask(taskId: string) {
   border: 1px solid var(--border);
   margin-bottom: 6px;
   font-size: 12px;
+}
+
+.taskRow.todayTask {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .taskText {
@@ -835,6 +979,17 @@ function removeTask(taskId: string) {
   }
 }
 
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .subject-btn:hover {
     transform: translateY(-2px);
@@ -854,10 +1009,10 @@ function removeTask(taskId: string) {
   .header,
   .card,
   .subjects,
-  .subject-btn {
+  .subject-btn,
+  .type-chip {
     animation: none;
   }
 }
 
 </style>
-

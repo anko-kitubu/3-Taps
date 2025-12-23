@@ -1,75 +1,44 @@
-# Nuxt Minimal Starter
+# 課題管理アプリ（Nuxt版）
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+大学の授業・レポート・テストなど「やること」を、日付ベースでまとめて管理するためのプロトタイプです。  
+Figmaで設計したUIをもとに、Nuxt（Vue）で実装しています。
 
-## Setup
+---
 
-Make sure to install dependencies:
+## 主な機能
+
+- 月間カレンダーで日付を選択
+- 科目アイコン → 種別（授業 / レポート / テスト）を選んで予定を追加
+- 選択中の日付の予定一覧表示
+- 直近の予定を最大3件表示
+- 予定の削除（確認ダイアログ付き）
+- `localStorage` に自動保存（リロードしても残る）
+- 2画面構成（ホーム / 友だち）
+  - `/friends` は現状ダミー表示（今後拡張予定）
+
+---
+
+## 技術スタック
+
+- Nuxt（Vue 3）
+- TypeScript
+- Vite
+- 保存: localStorage（キー: `task-manager-tasks`）
+
+---
+
+## 動作環境
+
+- Node.js 18+  
+  - 動作確認: Node v24.12.0
+
+---
+
+## セットアップ
 
 ```bash
-# npm
+# 依存関係インストール
 npm install
 
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
-```
-
-## Development Server
-
-Start the development server on `http://localhost:3000`:
-
-```bash
-# npm
+# 開発サーバー起動
 npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
-```
-
-## Production
-
-Build the application for production:
-
-```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.

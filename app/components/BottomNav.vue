@@ -28,6 +28,7 @@ defineProps<{ active: "home" | "friends" }>()
   align-items: center;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
   padding: 0 8px;
+  z-index: 20;
 }
 
 .item {
