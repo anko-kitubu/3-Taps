@@ -1,9 +1,66 @@
 ﻿<template>
   <main class="page">
     <header class="header">
-      <h1>課題管理アプリ</h1>
-      <p>やるべきことを、日付ごとに見通せるように。</p>
+      <h1>3-Taps!</h1>
+      <button
+        class="menu-toggle"
+        type="button"
+        aria-label="共有設定を開く"
+        aria-controls="share-panel"
+        :aria-expanded="isSharePanelOpen"
+        @click="toggleSharePanel"
+      >
+        <span class="menu-bar"></span>
+        <span class="menu-bar"></span>
+        <span class="menu-bar"></span>
+      </button>
     </header>
+
+    <!-- 共有コードパネル -->
+    <Teleport to="body">
+      <div v-if="isSharePanelOpen" class="share-panel-overlay" @click="closeSharePanel"></div>
+      <aside
+        v-if="isSharePanelOpen"
+        id="share-panel"
+        class="share-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="共有設定"
+        @click.stop
+      >
+        <div class="share-panel-header">
+          <h2 class="share-panel-title">共有コード</h2>
+          <div class="share-panel-actions">
+            <button class="share-generate" type="button" @click="regenerateShareCode">再生成</button>
+            <button class="share-close" type="button" aria-label="閉じる" @click="closeSharePanel">×</button>
+          </div>
+        </div>
+        <p class="share-hint">共有機能は現在未実装です。</p>
+        <div class="share-code">
+          <label class="share-label" for="share-code-input">共有コード</label>
+          <div class="share-controls">
+            <input
+              id="share-code-input"
+              v-model="shareCodeInput"
+              class="share-input"
+              type="text"
+              inputmode="text"
+              placeholder="例）AB12CD34"
+              autocomplete="off"
+            />
+            <button
+              class="share-apply"
+              type="button"
+              :disabled="shareCodeInput.trim().length === 0"
+              @click="applyShareCode"
+            >
+              設定
+            </button>
+          </div>
+          <p class="share-hint">このコードを友だちに共有すると、直近の予定が表示されます。</p>
+        </div>
+      </aside>
+    </Teleport>
 
     <!-- 直近の予定 -->
     <section class="card">
@@ -15,7 +72,7 @@
           <span class="taskText">
             {{ formatRelative(task.date) }} / {{ task.subject }}（{{ task.type }}）
           </span>
-          <button class="deleteBtn" @click="removeTask(task.id)">削除</button>
+          <button v-if="ownedTaskIds.has(task.id)" class="deleteBtn" @click="removeTask(task.id)">削除</button>
         </li>
       </ul>
 
@@ -37,13 +94,16 @@
         </span>
       </div>
       <div class="calendar">
-        <button v-for="(day, index) in calendarDays" :key="`${currentYear}-${currentMonth}-${index}`" class="day"
+        <button v-for="(cell, index) in calendarCells" :key="`${currentYear}-${currentMonth}-${index}`" class="day"
           :class="{
-            selected: day !== null && selectedDay === day,
-            today: day !== null && isCurrentMonth && day === todayDay,
-            empty: day === null
-          }" :disabled="day === null" @click="day !== null && (selectedDay = day)">
-          {{ day ?? '' }}
+            selected: cell.day !== null && selectedDay === cell.day,
+            today: cell.day !== null && isCurrentMonth && cell.day === todayDay,
+            empty: cell.day === null
+          }" :disabled="cell.day === null" @click="cell.day !== null && (selectedDay = cell.day)">
+          <span class="day-number">{{ cell.day ?? '' }}</span>
+          <span v-if="cell.types.length" class="day-dots">
+            <span v-for="type in cell.types" :key="type" class="day-dot" :data-type="type"></span>
+          </span>
         </button>
       </div>
     </section>
@@ -82,7 +142,7 @@
     <Teleport to="body">
       <div v-if="typeMenuSubject" class="type-menu-overlay" @click="closeTypeMenu"></div>
       <div v-if="typeMenuSubject" class="type-menu-bubble" :style="typeMenuStyle" @click.stop>
-        <button v-for="t in taskTypes" :key="t" class="type-chip" type="button"
+        <button v-for="t in taskTypes" :key="t" class="type-chip" type="button" :data-type="t"
           @click="addTask(typeMenuSubject, t)">
           {{ t }}
         </button>
@@ -145,23 +205,45 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { createClient } from '@supabase/supabase-js'
 
-const today = new Date()
-const todayYear = today.getFullYear()
-const todayMonth = today.getMonth() + 1
-const todayDay = today.getDate()
+const todayRef = ref(new Date())
+const todayYear = computed(() => todayRef.value.getFullYear())
+const todayMonth = computed(() => todayRef.value.getMonth() + 1)
+const todayDay = computed(() => todayRef.value.getDate())
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+const todayUtcDay = computed(() =>
+  Date.UTC(todayYear.value, todayMonth.value - 1, todayDay.value)
+)
 
-const currentYear = ref(todayYear)
-const currentMonth = ref(todayMonth)
+const currentYear = ref(todayYear.value)
+const currentMonth = ref(todayMonth.value)
 const daysInMonth = computed(() =>
   new Date(currentYear.value, currentMonth.value, 0).getDate()
 )
 
-const selectedDay = ref(todayDay)
+const selectedDay = ref(todayDay.value)
 const isCurrentMonth = computed(
-  () => currentYear.value === todayYear && currentMonth.value === todayMonth
+  () => currentYear.value === todayYear.value && currentMonth.value === todayMonth.value
 )
+
+const config = useRuntimeConfig()
+const publicConfig = config.public as Record<string, string | undefined>
+const supabaseUrl = publicConfig.supabaseUrl ?? publicConfig.SUPABASE_URL
+const supabaseAnonKey = publicConfig.supabaseAnonKey ?? publicConfig.SUPABASE_ANON_KEY
+const supabase =
+  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
+
+const SHARE_CODE_STORAGE_KEY = 'shared-tasks-code'
+const SHARED_TASK_IDS_STORAGE_KEY = 'task-manager-shared-ids'
+const SHARE_CODE_LENGTH = 8
+const SHARE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const shareCode = ref('')
+const shareCodeInput = ref('')
+const isShareCodeSet = computed(() => shareCode.value.trim().length > 0)
+const sharedTaskIds = ref<Set<string>>(new Set())
+const isSharePanelOpen = ref(false)
 
 type Subject = {
   id: string
@@ -179,7 +261,7 @@ const defaultSubjects: Subject[] = [
 
 const subjects = ref<Subject[]>([...defaultSubjects])
 
-const taskTypes = ['補講', '課題', '試験']
+const taskTypes = ['課題', '試験', '補講']
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土']
 
 const emojiOptions = ['📘', '📗', '📙', '📕', '🧪', '⚡', '🧠', '🧮', '📝', '🛠️', '💻', '🌎']
@@ -200,8 +282,14 @@ const tasks = ref<Task[]>([])
 
 const STORAGE_KEY = 'task-manager-tasks'
 const SUBJECTS_STORAGE_KEY = 'task-manager-subjects'
+const STORAGE_SAVE_DEBOUNCE_MS = 300
+let tasksSaveTimer: ReturnType<typeof setTimeout> | null = null
+let subjectsSaveTimer: ReturnType<typeof setTimeout> | null = null
+let todayTimer: ReturnType<typeof setTimeout> | null = null
 
-onMounted(() => {
+onMounted(async () => {
+  scheduleTodayRefresh()
+
   const saved = localStorage.getItem(STORAGE_KEY)
   if (saved) {
     try {
@@ -220,12 +308,43 @@ onMounted(() => {
       localStorage.removeItem(SUBJECTS_STORAGE_KEY)
     }
   }
+  initShareCode()
+
+  if (!supabase) {
+    console.warn('Supabase config missing. Shared tasks are disabled.')
+    return
+  }
+
+  if (isShareCodeSet.value) {
+    await shareExistingTasks()
+  }
+})
+
+onBeforeUnmount(() => {
+  if (todayTimer) {
+    clearTimeout(todayTimer)
+    todayTimer = null
+  }
+  if (tasksSaveTimer) {
+    clearTimeout(tasksSaveTimer)
+    tasksSaveTimer = null
+  }
+  if (subjectsSaveTimer) {
+    clearTimeout(subjectsSaveTimer)
+    subjectsSaveTimer = null
+  }
 })
 
 watch(
   tasks,
   (val) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
+    if (tasksSaveTimer) {
+      clearTimeout(tasksSaveTimer)
+    }
+    tasksSaveTimer = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
+      tasksSaveTimer = null
+    }, STORAGE_SAVE_DEBOUNCE_MS)
   },
   { deep: true }
 )
@@ -233,7 +352,13 @@ watch(
 watch(
   subjects,
   (val) => {
-    localStorage.setItem(SUBJECTS_STORAGE_KEY, JSON.stringify(val))
+    if (subjectsSaveTimer) {
+      clearTimeout(subjectsSaveTimer)
+    }
+    subjectsSaveTimer = setTimeout(() => {
+      localStorage.setItem(SUBJECTS_STORAGE_KEY, JSON.stringify(val))
+      subjectsSaveTimer = null
+    }, STORAGE_SAVE_DEBOUNCE_MS)
   },
   { deep: true }
 )
@@ -252,9 +377,12 @@ const selectedDateString = computed(
     ).padStart(2, '0')}`
 )
 
-const todayString = `${todayYear}-${String(todayMonth).padStart(2, '0')}-${String(
-  todayDay
-).padStart(2, '0')}`
+const todayString = computed(
+  () =>
+    `${todayYear.value}-${String(todayMonth.value).padStart(2, '0')}-${String(
+      todayDay.value
+    ).padStart(2, '0')}`
+)
 
 const selectedLabel = computed(
   () => `${currentYear.value}年${currentMonth.value}月${selectedDay.value}日 の予定`
@@ -264,18 +392,103 @@ const selectedDayTasks = computed(() =>
   tasks.value.filter((t) => t.date === selectedDateString.value)
 )
 
-const upcomingTasks = computed(() => {
-  const nowStr = todayString
+const localUpcomingTasks = computed(() => {
+  const nowStr = todayString.value
   return [...tasks.value]
     .filter((t) => t.date >= nowStr)
     .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 3)
 })
 
-const calendarDays = computed(() => {
+const upcomingTasks = computed(() => {
+  return [...localUpcomingTasks.value].slice(0, 3)
+})
+
+const ownedTaskIds = computed(() => new Set(tasks.value.map((task) => task.id)))
+
+async function shareExistingTasks() {
+  if (!supabase || !isShareCodeSet.value) return
+  const nowStr = todayString.value
+  const pending = tasks.value.filter(
+    (task) => task.date >= nowStr && !sharedTaskIds.value.has(task.id)
+  )
+  if (pending.length === 0) return
+  const payload = pending.map((task) => ({
+    id: task.id,
+    share_code: shareCode.value,
+    date: task.date,
+    subject: task.subject,
+    type: task.type
+  }))
+  const { error } = await supabase.from('shared_tasks').upsert(payload, { onConflict: 'id' })
+  if (error) {
+    console.warn('Failed to share existing tasks.', error)
+    return
+  }
+  for (const task of pending) {
+    sharedTaskIds.value.add(task.id)
+  }
+  persistSharedTaskIds()
+}
+
+async function shareTask(task: Task) {
+  if (!supabase || !isShareCodeSet.value) return
+  if (task.date < todayString.value) return
+  const { error } = await supabase.from('shared_tasks').upsert(
+    {
+      id: task.id,
+      share_code: shareCode.value,
+      date: task.date,
+      subject: task.subject,
+      type: task.type
+    },
+    { onConflict: 'id' }
+  )
+  if (error) {
+    console.warn('Failed to share task.', error)
+    return
+  }
+  sharedTaskIds.value.add(task.id)
+  persistSharedTaskIds()
+}
+
+async function unshareTask(taskId: string) {
+  if (!supabase || !isShareCodeSet.value) return
+  const { error } = await supabase
+    .from('shared_tasks')
+    .delete()
+    .eq('id', taskId)
+    .eq('share_code', shareCode.value)
+  if (error) {
+    console.warn('Failed to remove shared task.', error)
+    return
+  }
+  if (sharedTaskIds.value.delete(taskId)) {
+    persistSharedTaskIds()
+  }
+}
+
+const taskTypeByDate = computed(() => {
+  const map = new Map<string, Set<string>>()
+  for (const task of tasks.value) {
+    if (!map.has(task.date)) {
+      map.set(task.date, new Set())
+    }
+    map.get(task.date)?.add(task.type)
+  }
+  return map
+})
+
+const calendarCells = computed(() => {
   const firstWeekday = new Date(currentYear.value, currentMonth.value - 1, 1).getDay()
-  const blanks = Array.from({ length: firstWeekday }, () => null)
-  const days = Array.from({ length: daysInMonth.value }, (_, i) => i + 1)
+  const blanks = Array.from({ length: firstWeekday }, () => ({ day: null, types: [] as string[] }))
+  const days = Array.from({ length: daysInMonth.value }, (_, i) => {
+    const day = i + 1
+    const date = `${currentYear.value}-${String(currentMonth.value).padStart(2, '0')}-${String(
+      day
+    ).padStart(2, '0')}`
+    const types = taskTypeByDate.value.get(date)
+    return { day, types: types ? Array.from(types) : [] }
+  })
   return [...blanks, ...days]
 })
 
@@ -297,11 +510,123 @@ function goNextMonth() {
   }
 }
 
+function scheduleTodayRefresh() {
+  if (todayTimer) {
+    clearTimeout(todayTimer)
+  }
+  const now = new Date()
+  const next = new Date(now)
+  next.setHours(24, 0, 0, 0)
+  const msUntilNextDay = next.getTime() - now.getTime()
+  todayTimer = setTimeout(() => {
+    todayRef.value = new Date()
+    scheduleTodayRefresh()
+  }, msUntilNextDay + 1000)
+}
+
+function normalizeShareCode(value: string) {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+function generateShareCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(SHARE_CODE_LENGTH))
+  let code = ''
+  for (const byte of bytes) {
+    code += SHARE_CODE_ALPHABET[byte % SHARE_CODE_ALPHABET.length]
+  }
+  return code
+}
+
+function loadSharedTaskIds(code: string) {
+  const raw = localStorage.getItem(SHARED_TASK_IDS_STORAGE_KEY)
+  if (!raw) {
+    sharedTaskIds.value = new Set()
+    return
+  }
+  try {
+    const parsed = JSON.parse(raw) as { code?: string; ids?: string[] }
+    if (parsed?.code === code && Array.isArray(parsed.ids)) {
+      sharedTaskIds.value = new Set(parsed.ids.filter((id) => typeof id === 'string'))
+    } else {
+      sharedTaskIds.value = new Set()
+    }
+  } catch (error) {
+    console.warn('Failed to parse shared task ids.', error)
+    localStorage.removeItem(SHARED_TASK_IDS_STORAGE_KEY)
+    sharedTaskIds.value = new Set()
+  }
+}
+
+function persistSharedTaskIds() {
+  if (!isShareCodeSet.value) return
+  localStorage.setItem(
+    SHARED_TASK_IDS_STORAGE_KEY,
+    JSON.stringify({ code: shareCode.value, ids: Array.from(sharedTaskIds.value) })
+  )
+}
+
+function setShareCode(code: string) {
+  shareCode.value = code
+  shareCodeInput.value = code
+  loadSharedTaskIds(code)
+}
+
+function initShareCode() {
+  const saved = localStorage.getItem(SHARE_CODE_STORAGE_KEY)
+  const normalized = saved ? normalizeShareCode(saved) : ''
+  if (normalized) {
+    setShareCode(normalized)
+    return
+  }
+  const generated = generateShareCode()
+  setShareCode(generated)
+  localStorage.setItem(SHARE_CODE_STORAGE_KEY, generated)
+}
+
+async function applyShareCode() {
+  const normalized = normalizeShareCode(shareCodeInput.value)
+  if (!normalized) return
+  if (normalized === shareCode.value) return
+  shareCode.value = normalized
+  shareCodeInput.value = normalized
+  loadSharedTaskIds(normalized)
+  localStorage.setItem(SHARE_CODE_STORAGE_KEY, normalized)
+  await shareExistingTasks()
+}
+
+function regenerateShareCode() {
+  const ok = confirm('共有コードを再生成します。既存のコードでは見られなくなります。続けますか？')
+  if (!ok) return
+  shareCodeInput.value = generateShareCode()
+  void applyShareCode()
+}
+
+function openSharePanel() {
+  closeTypeMenu()
+  isSharePanelOpen.value = true
+}
+
+function closeSharePanel() {
+  isSharePanelOpen.value = false
+}
+
+function toggleSharePanel() {
+  if (isSharePanelOpen.value) {
+    closeSharePanel()
+  } else {
+    openSharePanel()
+  }
+}
 
 function formatRelative(dateStr: string) {
-  const target = new Date(dateStr)
-  const diffMs = target.getTime() - today.getTime()
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+  const parts = dateStr.split('-')
+  if (parts.length < 3) return dateStr
+  const year = Number(parts[0])
+  const month = Number(parts[1])
+  const day = Number(parts[2])
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return dateStr
+  const targetUtc = Date.UTC(year, month - 1, day)
+  const diffDays = Math.round((targetUtc - todayUtcDay.value) / MS_PER_DAY)
   if (diffDays === 0) return '今日'
   if (diffDays === 1) return '明日'
   if (diffDays > 1 && diffDays <= 7) return `あと${diffDays}日`
@@ -393,13 +718,15 @@ function closeTypeMenu() {
 }
 
 function addTask(subject: Subject, type: string) {
-  tasks.value.push({
+  const task: Task = {
     id: crypto.randomUUID(),
     date: selectedDateString.value,
     subjectId: subject.id,
     subject: subject.name,
     type
-  })
+  }
+  tasks.value.push(task)
+  void shareTask(task)
   closeTypeMenu()
 }
 
@@ -408,6 +735,7 @@ function removeTask(taskId: string) {
   if (!ok) return
 
   tasks.value = tasks.value.filter((t) => t.id !== taskId)
+  void unshareTask(taskId)
 }
 
 </script>
@@ -433,6 +761,13 @@ function removeTask(taskId: string) {
   color: var(--ink);
 }
 
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .header h1 {
   font-size: 18px;
   margin-bottom: 4px;
@@ -442,6 +777,34 @@ function removeTask(taskId: string) {
 .header p {
   font-size: 12px;
   color: var(--muted);
+}
+
+.menu-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.menu-bar {
+  width: 16px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--ink);
+  display: block;
+}
+
+.menu-toggle:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
 }
 
 .card {
@@ -457,6 +820,87 @@ function removeTask(taskId: string) {
   font-weight: 700;
   margin-bottom: 8px;
   letter-spacing: 0.02em;
+}
+
+.share-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 50;
+}
+
+.share-panel {
+  --ink: #1f1f1f;
+  --muted: #6f6f6f;
+  --border: #dddddd;
+  --surface: #ffffff;
+  --surface-muted: #f6f6f6;
+  --accent: #f2a15a;
+  --accent-strong: #e57f32;
+  --accent-soft: #fff0e2;
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100svh;
+  width: min(320px, 86vw);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 24px rgba(0, 0, 0, 0.12);
+  padding: calc(18px + env(safe-area-inset-top)) 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 60;
+}
+
+.share-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.share-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.share-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.share-generate {
+  border: none;
+  background: var(--surface-muted);
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.share-generate:hover {
+  color: var(--ink);
+}
+
+.share-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.share-close:hover {
+  color: var(--ink);
 }
 
 .calendar-header {
@@ -491,6 +935,55 @@ function removeTask(taskId: string) {
 .card p {
   margin: 0 0 6px;
   font-size: 12px;
+  color: var(--muted);
+}
+
+.share-code {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.share-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.share-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.share-input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--surface);
+}
+
+.share-apply {
+  border: none;
+  background: var(--surface-muted);
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.share-apply:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.share-hint {
+  margin: 0;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -549,6 +1042,38 @@ function removeTask(taskId: string) {
   align-items: center;
   justify-content: center;
   position: relative;
+}
+
+.day-number {
+  line-height: 1;
+}
+
+.day-dots {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+}
+
+.day-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #bdbdbd;
+}
+
+.day-dot[data-type='課題'] {
+  background: #4da3ff;
+}
+
+.day-dot[data-type='試験'] {
+  background: #ff6b6b;
+}
+
+.day-dot[data-type='補講'] {
+  background: #f2c94c;
 }
 
 .day.selected {
@@ -681,6 +1206,18 @@ function removeTask(taskId: string) {
   cursor: pointer;
   box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
   animation: bubbleIn 160ms ease-out both;
+}
+
+.type-chip[data-type='課題'] {
+  border-color: #4da3ff;
+}
+
+.type-chip[data-type='試験'] {
+  border-color: #ff6b6b;
+}
+
+.type-chip[data-type='補講'] {
+  border-color: #f2c94c;
 }
 
 /* 科目追加モーダル */
@@ -867,8 +1404,8 @@ function removeTask(taskId: string) {
 }
 
 .taskRow.todayTask {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: #7cc7ff;
+  background: #e9f6ff;
 }
 
 .taskText {
