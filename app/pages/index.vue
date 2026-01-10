@@ -68,6 +68,8 @@
       </aside>
     </Teleport>
 
+    <div class="two-column-layout">
+      <div class="column column-left">
     <!-- 直近の予定 -->
     <section class="card">
       <h2>直近の予定</h2>
@@ -95,8 +97,8 @@
       <div class="calendar-header">
         <h2>{{ currentYear }}年 {{ currentMonth }}月</h2>
         <div class="calendar-actions">
-          <button class="month-btn" type="button" @click="goPrevMonth">?</button>
-          <button class="month-btn" type="button" @click="goNextMonth">?</button>
+          <button class="month-btn" type="button" @click="goPrevMonth">‹</button>
+          <button class="month-btn" type="button" @click="goNextMonth">›</button>
         </div>
       </div>
       <div class="calendar-weekdays">
@@ -120,6 +122,8 @@
       </div>
     </section>
 
+      </div>
+      <div class="column column-right">
     <!-- 選択した日の予定 -->
     <section class="card">
       <h2>{{ selectedLabel }}</h2>
@@ -153,6 +157,8 @@
       </div>
     </section>
 
+      </div>
+    </div>
     <!-- 種別選択バブル -->
     <Teleport to="body">
       <div v-if="typeMenuSubject" class="type-menu-overlay" @click="closeTypeMenu"></div>
@@ -294,10 +300,10 @@ type Subject = {
 
 // 科目の初期データ
 const defaultSubjects: Subject[] = [
-  { id: 'denji', name: '電磁気学', emoji: '?' },
-  { id: 'yuukagaku', name: '有機化学', emoji: '??' },
-  { id: 'eikoku', name: '英語', emoji: '??' },
-  { id: 'kikaikougaku', name: '機械工学', emoji: '??' }
+  { id: 'denji', name: '電磁気学', emoji: '⚡' },
+  { id: 'yuukagaku', name: '有機化学', emoji: '🧪' },
+  { id: 'eikoku', name: '英語', emoji: '📘' },
+  { id: 'kikaikougaku', name: '機械工学', emoji: '⚙️' }
 ]
 
 // 科目の状態と表示用マップ
@@ -315,11 +321,11 @@ const subjectNameById = computed(() => {
 const taskTypes = ['課題', '試験', '補講']
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土']
 
-const emojiOptions = ['??', '??', '??', '??', '??', '?', '??', '??', '??', '???', '??', '??']
+const emojiOptions = ['⚡', '🧪', '📘', '⚙️', '📗', '🎓', '💻', '📐', '📏', '🧠', '📊', '📝']
 const isSubjectModalOpen = ref(false)
 const isSubjectManageOpen = ref(false)
 const newSubjectName = ref('')
-const newSubjectEmoji = ref(emojiOptions[0] ?? '??')
+const newSubjectEmoji = ref(emojiOptions[0] ?? '📝')
 
 // 予定メモの状態
 const isMemoModalOpen = ref(false)
@@ -779,13 +785,21 @@ function saveMemo() {
   closeMemoModal()
 }
 
+// ID生成
+function createId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 // 科目モーダル操作
 function openSubjectModal() {
   closeTypeMenu()
   isSubjectManageOpen.value = false
   isSubjectModalOpen.value = true
   newSubjectName.value = ''
-  newSubjectEmoji.value = emojiOptions[0] ?? '??'
+  newSubjectEmoji.value = emojiOptions[0] ?? '📝'
 }
 
 function closeSubjectModal() {
@@ -797,7 +811,7 @@ function addSubject() {
   if (!name) return
 
   subjects.value.push({
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     emoji: newSubjectEmoji.value
   })
@@ -867,7 +881,7 @@ function closeTypeMenu() {
 // 予定の追加・削除
 function addTask(subject: Subject, type: string) {
   const task: Task = {
-    id: crypto.randomUUID(),
+    id: createId(),
     date: selectedDateString.value,
     subjectId: subject.id,
     type
@@ -1243,6 +1257,18 @@ function removeTask(taskId: string) {
 .day:focus-visible {
   outline: 2px solid var(--accent-strong);
   outline-offset: -2px;
+}
+
+.two-column-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .subjects {
@@ -1664,6 +1690,23 @@ function removeTask(taskId: string) {
     margin: 24px auto;
     border-radius: 20px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+  }
+}
+
+@media (min-width: 900px) {
+  .page {
+    max-width: 980px;
+  }
+
+  .two-column-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+
+  .subjects {
+    margin-bottom: 0;
   }
 }
 
