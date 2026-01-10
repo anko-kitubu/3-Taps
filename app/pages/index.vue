@@ -72,12 +72,18 @@
       <h2>直近の予定</h2>
       <p v-if="upcomingTasks.length === 0">まだ予定はないよ！</p>
       <ul v-else class="taskList">
-        <li v-for="task in upcomingTasks" :key="task.id" class="taskRow"
-          :class="{ todayTask: task.date === todayString }">
+        <li
+          v-for="task in upcomingTasks"
+          :key="task.id"
+          class="taskRow"
+          :class="{ todayTask: task.date === todayString }"
+          @click="openMemoModal(task)"
+        >
           <span class="taskText">
             {{ formatRelative(task.date) }} / {{ getSubjectName(task.subjectId) }}（{{ task.type }}）
+            <span v-if="hasMemo(task)" class="taskBadge">詳細あり</span>
           </span>
-          <button v-if="ownedTaskIds.has(task.id)" class="deleteBtn" @click="removeTask(task.id)">削除</button>
+          <button v-if="ownedTaskIds.has(task.id)" class="deleteBtn" @click.stop="removeTask(task.id)">削除</button>
         </li>
       </ul>
 
@@ -117,9 +123,12 @@
     <section class="card">
       <h2>{{ selectedLabel }}</h2>
       <p v-if="selectedDayTasks.length === 0">まだ予定はないよ！</p>
-      <ul v-else>
-        <li v-for="task in selectedDayTasks" :key="task.id">
-          {{ getSubjectName(task.subjectId) }}（{{ task.type }}）
+      <ul v-else class="taskList">
+        <li v-for="task in selectedDayTasks" :key="task.id" class="taskRow" @click="openMemoModal(task)">
+          <span class="taskText">
+            {{ getSubjectName(task.subjectId) }}（{{ task.type }}）
+            <span v-if="hasMemo(task)" class="taskBadge">詳細あり</span>
+          </span>
         </li>
       </ul>
     </section>
@@ -202,6 +211,25 @@
         </ul>
         <div class="subject-actions">
           <button class="cancel" type="button" @click="closeSubjectManageModal">閉じる</button>
+        </div>
+      </div>
+    </div>
+    <!-- 予定メモモーダル -->
+    <div v-if="isMemoModalOpen" class="memo-modal-backdrop" @click="closeMemoModal">
+      <div class="memo-modal" @click.stop>
+        <h3>予定メモ</h3>
+        <label class="memo-field">
+          <span class="memo-label">メモ</span>
+          <textarea
+            v-model="memoDraft"
+            class="memo-input"
+            rows="4"
+            placeholder="例）参考書の第3章まで進める"
+          ></textarea>
+        </label>
+        <div class="subject-actions">
+          <button class="primary" type="button" @click="saveMemo">保存</button>
+          <button class="cancel" type="button" @click="closeMemoModal">閉じる</button>
         </div>
       </div>
     </div>
@@ -291,12 +319,18 @@ const isSubjectManageOpen = ref(false)
 const newSubjectName = ref('')
 const newSubjectEmoji = ref(emojiOptions[0] ?? '📘')
 
+// 予定メモの状態
+const isMemoModalOpen = ref(false)
+const memoDraft = ref('')
+const memoTaskId = ref<string | null>(null)
+
 // 予定データ
 type Task = {
   id: string
   date: string // "YYYY-MM-DD"
   subjectId: string
   type: string
+  memo?: string
 }
 
 const tasks = ref<Task[]>([])
@@ -447,7 +481,7 @@ function normalizeTasks(raw: unknown): Task[] {
   const normalized: Task[] = []
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
-    const task = item as Partial<Task> & { subject?: string }
+    const task = item as Partial<Task> & { subject?: string; memo?: string }
     if (typeof task.id !== 'string' || typeof task.date !== 'string' || typeof task.type !== 'string') {
       continue
     }
@@ -457,14 +491,24 @@ function normalizeTasks(raw: unknown): Task[] {
       subjectId = subjectIdByName.get(task.subject)
     }
     if (!subjectId) continue
-    normalized.push({
+    const memo = typeof task.memo === 'string' ? task.memo.trim() : ''
+    const normalizedTask: Task = {
       id: task.id,
       date: task.date,
       subjectId,
       type: task.type
-    })
+    }
+    if (memo) {
+      normalizedTask.memo = memo
+    }
+    normalized.push(normalizedTask)
   }
   return normalized
+}
+
+// メモの有無判定
+function hasMemo(task: Task) {
+  return Boolean(task.memo && task.memo.trim().length > 0)
 }
 
 // 共有同期（Supabase）
@@ -706,6 +750,31 @@ function formatRelative(dateStr: string) {
   if (diffDays === 1) return '明日'
   if (diffDays > 1 && diffDays <= 7) return `あと${diffDays}日`
   return dateStr
+}
+
+// 予定メモ操作
+function openMemoModal(task: Task) {
+  memoTaskId.value = task.id
+  memoDraft.value = task.memo ?? ''
+  isMemoModalOpen.value = true
+}
+
+function closeMemoModal() {
+  isMemoModalOpen.value = false
+  memoTaskId.value = null
+  memoDraft.value = ''
+}
+
+function saveMemo() {
+  if (!memoTaskId.value) return
+  const task = tasks.value.find((item) => item.id === memoTaskId.value)
+  if (!task) {
+    closeMemoModal()
+    return
+  }
+  const trimmed = memoDraft.value.trim()
+  task.memo = trimmed ? trimmed : undefined
+  closeMemoModal()
 }
 
 // 科目モーダル操作
@@ -1455,6 +1524,56 @@ function removeTask(taskId: string) {
   cursor: pointer;
   font-size: 12px;
 }
+
+/* 予定メモモーダル */
+.memo-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+
+.memo-modal {
+  background: var(--surface);
+  padding: 16px;
+  border-radius: 16px;
+  width: min(360px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+}
+
+.memo-modal h3 {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.memo-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memo-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.memo-input {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--surface);
+  resize: vertical;
+  min-height: 96px;
+}
 .taskList {
   list-style: none;
   padding: 0;
@@ -1472,6 +1591,7 @@ function removeTask(taskId: string) {
   border: 1px solid var(--border);
   margin-bottom: 6px;
   font-size: 12px;
+  cursor: pointer;
 }
 
 .taskRow.todayTask {
@@ -1481,6 +1601,17 @@ function removeTask(taskId: string) {
 
 .taskText {
   flex: 1;
+}
+
+.taskBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: #2f6fb3;
+  background: #e9f6ff;
+  border: 1px solid #bfe2ff;
 }
 
 .deleteBtn {
