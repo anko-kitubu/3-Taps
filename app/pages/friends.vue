@@ -8,7 +8,7 @@
     <section class="card">
       <h2>友だちの直近の予定</h2>
       <div class="share-code">
-        <p class="share-hint">共有機能は現在未実装です。</p>
+        <p v-if="!shareEnabled" class="share-hint">共有機能は現在停止中です。</p>
         <label class="share-label" for="share-code-input">共有コード</label>
         <div class="share-controls">
           <input
@@ -18,17 +18,23 @@
             type="text"
             placeholder="例）AB12CD34"
             autocomplete="off"
+            :disabled="!shareEnabled"
           />
-          <button class="share-apply" type="button" :disabled="shareCodeInput.trim().length === 0" @click="applyShareCode">
+          <button
+            class="share-apply"
+            type="button"
+            :disabled="!shareEnabled || shareCodeInput.trim().length === 0"
+            @click="applyShareCode"
+          >
             接続
           </button>
         </div>
-        <p class="share-hint">同じコードの予定が表示されます。</p>
+        <p v-if="shareEnabled" class="share-hint">同じコードの予定が表示されます。</p>
       </div>
-      <p v-if="!isSupabaseReady">共有設定が未完了です。</p>
-      <p v-else-if="!isShareCodeSet">共有コードを入力してください。</p>
-      <p v-else-if="sharedUpcomingTasks.length === 0">まだ共有された予定はないよ！</p>
-      <ul v-else class="taskList">
+      <p v-if="shareEnabled && !isSupabaseReady">共有設定が未完了です。</p>
+      <p v-else-if="shareEnabled && !isShareCodeSet">共有コードを入力してください。</p>
+      <p v-else-if="shareEnabled && sharedUpcomingTasks.length === 0">まだ共有された予定はないよ！</p>
+      <ul v-else-if="shareEnabled" class="taskList">
         <li v-for="task in sharedUpcomingTasks" :key="task.id" class="taskRow">
           <span class="taskText">
             {{ formatRelative(task.date) }} / {{ task.subject }}（{{ task.type }}）
@@ -47,6 +53,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { createClient } from '@supabase/supabase-js'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
+// 共有予定の型
 type SharedTask = {
   id: string
   date: string
@@ -54,19 +61,24 @@ type SharedTask = {
   type: string
 }
 
+// 共有設定（Supabase）
 const SHARE_CODE_STORAGE_KEY = 'shared-tasks-code'
+const shareEnabled = false
 const config = useRuntimeConfig()
 const publicConfig = config.public as Record<string, string | undefined>
 const supabaseUrl = publicConfig.supabaseUrl ?? publicConfig.SUPABASE_URL
 const supabaseAnonKey = publicConfig.supabaseAnonKey ?? publicConfig.SUPABASE_ANON_KEY
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
-const isSupabaseReady = Boolean(supabase)
+const isSupabaseReady = shareEnabled && Boolean(supabase)
 
+// 共有コードの状態
 const shareCode = ref('')
 const shareCodeInput = ref('')
 const isShareCodeSet = computed(() => shareCode.value.trim().length > 0)
 const sharedTasks = ref<SharedTask[]>([])
+
+// 日付の基準値
 const todayRef = ref(new Date())
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 const todayString = computed(
@@ -79,19 +91,26 @@ const todayUtcDay = computed(() =>
   Date.UTC(todayRef.value.getFullYear(), todayRef.value.getMonth(), todayRef.value.getDate())
 )
 
+// 表示する共有予定
 const sharedUpcomingTasks = computed(() => {
-  if (!supabase || !isShareCodeSet.value) return []
+  if (!shareEnabled || !supabase || !isShareCodeSet.value) return []
   return [...sharedTasks.value]
     .filter((t) => t.date >= todayString.value)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 3)
 })
 
+// Realtime購読とタイマー
 let shareChannel: RealtimeChannel | null = null
 let todayTimer: ReturnType<typeof setTimeout> | null = null
 
+// 初期化
 onMounted(async () => {
   scheduleTodayRefresh()
+
+  if (!shareEnabled) {
+    return
+  }
 
   if (!supabase) {
     console.warn('Supabase config missing. Shared tasks are disabled.')
@@ -107,6 +126,7 @@ onMounted(async () => {
   }
 })
 
+// 後片付け
 onBeforeUnmount(() => {
   if (shareChannel) {
     void shareChannel.unsubscribe()
@@ -118,6 +138,7 @@ onBeforeUnmount(() => {
   }
 })
 
+// 日付更新タイマー
 function scheduleTodayRefresh() {
   if (todayTimer) {
     clearTimeout(todayTimer)
@@ -132,11 +153,14 @@ function scheduleTodayRefresh() {
   }, msUntilNextDay + 1000)
 }
 
+// 共有コードの正規化
 function normalizeShareCode(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 
+// 共有予定の取得
 async function fetchSharedTasks() {
+  if (!shareEnabled) return
   if (!supabase || !isShareCodeSet.value) return
   const { data, error } = await supabase
     .from('shared_tasks')
@@ -151,7 +175,9 @@ async function fetchSharedTasks() {
   sharedTasks.value = data ?? []
 }
 
+// Realtime購読
 async function subscribeToShareCode(code: string) {
+  if (!shareEnabled) return
   if (!supabase) return
   if (!code) return
   if (shareChannel) {
@@ -172,7 +198,9 @@ async function subscribeToShareCode(code: string) {
     .subscribe()
 }
 
+// 共有コードの適用
 async function applyShareCode() {
+  if (!shareEnabled) return
   if (!supabase) return
   const code = normalizeShareCode(shareCodeInput.value)
   if (!code) return
@@ -182,6 +210,7 @@ async function applyShareCode() {
   await subscribeToShareCode(code)
 }
 
+// 表示用の日付ラベル
 function formatRelative(dateStr: string) {
   const parts = dateStr.split('-')
   if (parts.length < 3) return dateStr

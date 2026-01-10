@@ -31,11 +31,13 @@
         <div class="share-panel-header">
           <h2 class="share-panel-title">共有コード</h2>
           <div class="share-panel-actions">
-            <button class="share-generate" type="button" @click="regenerateShareCode">再生成</button>
+            <button class="share-generate" type="button" :disabled="!shareEnabled" @click="regenerateShareCode">
+              再生成
+            </button>
             <button class="share-close" type="button" aria-label="閉じる" @click="closeSharePanel">×</button>
           </div>
         </div>
-        <p class="share-hint">共有機能は現在未実装です。</p>
+        <p v-if="!shareEnabled" class="share-hint">共有機能は現在停止中です。</p>
         <div class="share-code">
           <label class="share-label" for="share-code-input">共有コード</label>
           <div class="share-controls">
@@ -47,17 +49,20 @@
               inputmode="text"
               placeholder="例）AB12CD34"
               autocomplete="off"
+              :disabled="!shareEnabled"
             />
             <button
               class="share-apply"
               type="button"
-              :disabled="shareCodeInput.trim().length === 0"
+              :disabled="!shareEnabled || shareCodeInput.trim().length === 0"
               @click="applyShareCode"
             >
               設定
             </button>
           </div>
-          <p class="share-hint">このコードを友だちに共有すると、直近の予定が表示されます。</p>
+          <p v-if="shareEnabled" class="share-hint">
+            このコードを友だちに共有すると、直近の予定が表示されます。
+          </p>
         </div>
       </aside>
     </Teleport>
@@ -70,7 +75,7 @@
         <li v-for="task in upcomingTasks" :key="task.id" class="taskRow"
           :class="{ todayTask: task.date === todayString }">
           <span class="taskText">
-            {{ formatRelative(task.date) }} / {{ task.subject }}（{{ task.type }}）
+            {{ formatRelative(task.date) }} / {{ getSubjectName(task.subjectId) }}（{{ task.type }}）
           </span>
           <button v-if="ownedTaskIds.has(task.id)" class="deleteBtn" @click="removeTask(task.id)">削除</button>
         </li>
@@ -114,7 +119,7 @@
       <p v-if="selectedDayTasks.length === 0">まだ予定はないよ！</p>
       <ul v-else>
         <li v-for="task in selectedDayTasks" :key="task.id">
-          {{ task.subject }}（{{ task.type }}）
+          {{ getSubjectName(task.subjectId) }}（{{ task.type }}）
         </li>
       </ul>
     </section>
@@ -208,6 +213,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { createClient } from '@supabase/supabase-js'
 
+// 日付の基準値
 const todayRef = ref(new Date())
 const todayYear = computed(() => todayRef.value.getFullYear())
 const todayMonth = computed(() => todayRef.value.getMonth() + 1)
@@ -217,6 +223,7 @@ const todayUtcDay = computed(() =>
   Date.UTC(todayYear.value, todayMonth.value - 1, todayDay.value)
 )
 
+// カレンダーの状態
 const currentYear = ref(todayYear.value)
 const currentMonth = ref(todayMonth.value)
 const daysInMonth = computed(() =>
@@ -228,6 +235,7 @@ const isCurrentMonth = computed(
   () => currentYear.value === todayYear.value && currentMonth.value === todayMonth.value
 )
 
+// 共有（Supabase）設定
 const config = useRuntimeConfig()
 const publicConfig = config.public as Record<string, string | undefined>
 const supabaseUrl = publicConfig.supabaseUrl ?? publicConfig.SUPABASE_URL
@@ -235,6 +243,8 @@ const supabaseAnonKey = publicConfig.supabaseAnonKey ?? publicConfig.SUPABASE_AN
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
 
+// 共有コードの状態
+const shareEnabled = false
 const SHARE_CODE_STORAGE_KEY = 'shared-tasks-code'
 const SHARED_TASK_IDS_STORAGE_KEY = 'task-manager-shared-ids'
 const SHARE_CODE_LENGTH = 8
@@ -245,6 +255,7 @@ const isShareCodeSet = computed(() => shareCode.value.trim().length > 0)
 const sharedTaskIds = ref<Set<string>>(new Set())
 const isSharePanelOpen = ref(false)
 
+// 科目マスタ
 type Subject = {
   id: string
   name: string
@@ -259,8 +270,18 @@ const defaultSubjects: Subject[] = [
   { id: 'kikaikougaku', name: '機械工学', emoji: '⚙️' }
 ]
 
+// 科目の状態と表示用マップ
 const subjects = ref<Subject[]>([...defaultSubjects])
 
+const subjectNameById = computed(() => {
+  const map = new Map<string, string>()
+  for (const subject of subjects.value) {
+    map.set(subject.id, subject.name)
+  }
+  return map
+})
+
+// UI用の固定データ
 const taskTypes = ['課題', '試験', '補講']
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土']
 
@@ -270,16 +291,17 @@ const isSubjectManageOpen = ref(false)
 const newSubjectName = ref('')
 const newSubjectEmoji = ref(emojiOptions[0] ?? '📘')
 
+// 予定データ
 type Task = {
   id: string
   date: string // "YYYY-MM-DD"
   subjectId: string
-  subject: string
   type: string
 }
 
 const tasks = ref<Task[]>([])
 
+// ローカル保存
 const STORAGE_KEY = 'task-manager-tasks'
 const SUBJECTS_STORAGE_KEY = 'task-manager-subjects'
 const STORAGE_SAVE_DEBOUNCE_MS = 300
@@ -287,18 +309,10 @@ let tasksSaveTimer: ReturnType<typeof setTimeout> | null = null
 let subjectsSaveTimer: ReturnType<typeof setTimeout> | null = null
 let todayTimer: ReturnType<typeof setTimeout> | null = null
 
+// 初期化
 onMounted(async () => {
   scheduleTodayRefresh()
 
-  const saved = localStorage.getItem(STORAGE_KEY)
-  if (saved) {
-    try {
-      tasks.value = JSON.parse(saved)
-    } catch (error) {
-      console.warn('Failed to parse saved tasks.', error)
-      localStorage.removeItem(STORAGE_KEY)
-    }
-  }
   const savedSubjects = localStorage.getItem(SUBJECTS_STORAGE_KEY)
   if (savedSubjects) {
     try {
@@ -308,7 +322,20 @@ onMounted(async () => {
       localStorage.removeItem(SUBJECTS_STORAGE_KEY)
     }
   }
+  const saved = localStorage.getItem(STORAGE_KEY)
+  if (saved) {
+    try {
+      tasks.value = normalizeTasks(JSON.parse(saved))
+    } catch (error) {
+      console.warn('Failed to parse saved tasks.', error)
+      localStorage.removeItem(STORAGE_KEY)
+    }
+  }
   initShareCode()
+
+  if (!shareEnabled) {
+    return
+  }
 
   if (!supabase) {
     console.warn('Supabase config missing. Shared tasks are disabled.')
@@ -320,6 +347,7 @@ onMounted(async () => {
   }
 })
 
+// 後片付け
 onBeforeUnmount(() => {
   if (todayTimer) {
     clearTimeout(todayTimer)
@@ -335,6 +363,7 @@ onBeforeUnmount(() => {
   }
 })
 
+// ローカル保存の監視
 watch(
   tasks,
   (val) => {
@@ -363,6 +392,7 @@ watch(
   { deep: true }
 )
 
+// 選択日の補正
 watch([currentYear, currentMonth], () => {
   const maxDay = daysInMonth.value
   if (selectedDay.value > maxDay) {
@@ -370,6 +400,7 @@ watch([currentYear, currentMonth], () => {
   }
 })
 
+// 日付の派生値
 const selectedDateString = computed(
   () =>
     `${currentYear.value}-${String(currentMonth.value).padStart(2, '0')}-${String(
@@ -385,7 +416,7 @@ const todayString = computed(
 )
 
 const selectedLabel = computed(
-  () => `${currentYear.value}年${currentMonth.value}月${selectedDay.value}日 の予定`
+  () => `${currentYear.value}年${currentMonth.value}月${selectedDay.value}日の予定`
 )
 
 const selectedDayTasks = computed(() =>
@@ -405,7 +436,40 @@ const upcomingTasks = computed(() => {
 
 const ownedTaskIds = computed(() => new Set(tasks.value.map((task) => task.id)))
 
+// 科目名の取得と移行補助
+function getSubjectName(subjectId: string) {
+  return subjectNameById.value.get(subjectId) ?? '（削除済み）'
+}
+
+function normalizeTasks(raw: unknown): Task[] {
+  if (!Array.isArray(raw)) return []
+  const subjectIdByName = new Map(subjects.value.map((subject) => [subject.name, subject.id]))
+  const normalized: Task[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const task = item as Partial<Task> & { subject?: string }
+    if (typeof task.id !== 'string' || typeof task.date !== 'string' || typeof task.type !== 'string') {
+      continue
+    }
+    let subjectId =
+      typeof task.subjectId === 'string' ? task.subjectId : undefined
+    if (!subjectId && typeof task.subject === 'string') {
+      subjectId = subjectIdByName.get(task.subject)
+    }
+    if (!subjectId) continue
+    normalized.push({
+      id: task.id,
+      date: task.date,
+      subjectId,
+      type: task.type
+    })
+  }
+  return normalized
+}
+
+// 共有同期（Supabase）
 async function shareExistingTasks() {
+  if (!shareEnabled) return
   if (!supabase || !isShareCodeSet.value) return
   const nowStr = todayString.value
   const pending = tasks.value.filter(
@@ -416,7 +480,7 @@ async function shareExistingTasks() {
     id: task.id,
     share_code: shareCode.value,
     date: task.date,
-    subject: task.subject,
+    subject: getSubjectName(task.subjectId),
     type: task.type
   }))
   const { error } = await supabase.from('shared_tasks').upsert(payload, { onConflict: 'id' })
@@ -431,6 +495,7 @@ async function shareExistingTasks() {
 }
 
 async function shareTask(task: Task) {
+  if (!shareEnabled) return
   if (!supabase || !isShareCodeSet.value) return
   if (task.date < todayString.value) return
   const { error } = await supabase.from('shared_tasks').upsert(
@@ -438,7 +503,7 @@ async function shareTask(task: Task) {
       id: task.id,
       share_code: shareCode.value,
       date: task.date,
-      subject: task.subject,
+      subject: getSubjectName(task.subjectId),
       type: task.type
     },
     { onConflict: 'id' }
@@ -452,6 +517,7 @@ async function shareTask(task: Task) {
 }
 
 async function unshareTask(taskId: string) {
+  if (!shareEnabled) return
   if (!supabase || !isShareCodeSet.value) return
   const { error } = await supabase
     .from('shared_tasks')
@@ -467,6 +533,7 @@ async function unshareTask(taskId: string) {
   }
 }
 
+// カレンダー表示用データ
 const taskTypeByDate = computed(() => {
   const map = new Map<string, Set<string>>()
   for (const task of tasks.value) {
@@ -492,6 +559,7 @@ const calendarCells = computed(() => {
   return [...blanks, ...days]
 })
 
+// 月移動
 function goPrevMonth() {
   if (currentMonth.value === 1) {
     currentMonth.value = 12
@@ -510,6 +578,7 @@ function goNextMonth() {
   }
 }
 
+// 日付更新タイマー
 function scheduleTodayRefresh() {
   if (todayTimer) {
     clearTimeout(todayTimer)
@@ -524,6 +593,7 @@ function scheduleTodayRefresh() {
   }, msUntilNextDay + 1000)
 }
 
+// 共有コードのユーティリティ
 function normalizeShareCode(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
@@ -583,7 +653,9 @@ function initShareCode() {
   localStorage.setItem(SHARE_CODE_STORAGE_KEY, generated)
 }
 
+// 共有コードの操作
 async function applyShareCode() {
+  if (!shareEnabled) return
   const normalized = normalizeShareCode(shareCodeInput.value)
   if (!normalized) return
   if (normalized === shareCode.value) return
@@ -595,12 +667,14 @@ async function applyShareCode() {
 }
 
 function regenerateShareCode() {
+  if (!shareEnabled) return
   const ok = confirm('共有コードを再生成します。既存のコードでは見られなくなります。続けますか？')
   if (!ok) return
   shareCodeInput.value = generateShareCode()
   void applyShareCode()
 }
 
+// 共有パネルUI
 function openSharePanel() {
   closeTypeMenu()
   isSharePanelOpen.value = true
@@ -618,6 +692,7 @@ function toggleSharePanel() {
   }
 }
 
+// 表示用の日付ラベル
 function formatRelative(dateStr: string) {
   const parts = dateStr.split('-')
   if (parts.length < 3) return dateStr
@@ -633,6 +708,7 @@ function formatRelative(dateStr: string) {
   return dateStr
 }
 
+// 科目モーダル操作
 function openSubjectModal() {
   closeTypeMenu()
   isSubjectManageOpen.value = false
@@ -717,12 +793,12 @@ function closeTypeMenu() {
   typeMenuPosition.value = null
 }
 
+// 予定の追加・削除
 function addTask(subject: Subject, type: string) {
   const task: Task = {
     id: crypto.randomUUID(),
     date: selectedDateString.value,
     subjectId: subject.id,
-    subject: subject.name,
     type
   }
   tasks.value.push(task)
@@ -772,11 +848,6 @@ function removeTask(taskId: string) {
   font-size: 18px;
   margin-bottom: 4px;
   letter-spacing: 0.02em;
-}
-
-.header p {
-  font-size: 12px;
-  color: var(--muted);
 }
 
 .menu-toggle {
