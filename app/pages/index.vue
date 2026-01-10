@@ -1,4 +1,5 @@
-﻿<template>
+<template>
+  <div class="page-shell">
   <main class="page">
     <header class="header">
       <h1>3-Taps!</h1>
@@ -71,7 +72,7 @@
     <section class="card">
       <h2>直近の予定</h2>
       <p v-if="upcomingTasks.length === 0">まだ予定はないよ！</p>
-      <ul v-else class="taskList">
+      <ul v-else class="taskList taskList-scroll taskList-scroll-upcoming">
         <li
           v-for="task in upcomingTasks"
           :key="task.id"
@@ -94,8 +95,8 @@
       <div class="calendar-header">
         <h2>{{ currentYear }}年 {{ currentMonth }}月</h2>
         <div class="calendar-actions">
-          <button class="month-btn" type="button" @click="goPrevMonth">‹</button>
-          <button class="month-btn" type="button" @click="goNextMonth">›</button>
+          <button class="month-btn" type="button" @click="goPrevMonth">?</button>
+          <button class="month-btn" type="button" @click="goNextMonth">?</button>
         </div>
       </div>
       <div class="calendar-weekdays">
@@ -123,7 +124,7 @@
     <section class="card">
       <h2>{{ selectedLabel }}</h2>
       <p v-if="selectedDayTasks.length === 0">まだ予定はないよ！</p>
-      <ul v-else class="taskList">
+      <ul v-else class="taskList taskList-scroll taskList-scroll-selected">
         <li v-for="task in selectedDayTasks" :key="task.id" class="taskRow" @click="openMemoModal(task)">
           <span class="taskText">
             {{ getSubjectName(task.subjectId) }}（{{ task.type }}）
@@ -235,6 +236,7 @@
     </div>
   </main>
   <BottomNav active="home" />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -292,10 +294,10 @@ type Subject = {
 
 // 科目の初期データ
 const defaultSubjects: Subject[] = [
-  { id: 'denji', name: '電磁気学', emoji: '⚡' },
-  { id: 'yuukagaku', name: '有機化学', emoji: '🧪' },
-  { id: 'eikoku', name: '英語', emoji: '📘' },
-  { id: 'kikaikougaku', name: '機械工学', emoji: '⚙️' }
+  { id: 'denji', name: '電磁気学', emoji: '?' },
+  { id: 'yuukagaku', name: '有機化学', emoji: '??' },
+  { id: 'eikoku', name: '英語', emoji: '??' },
+  { id: 'kikaikougaku', name: '機械工学', emoji: '??' }
 ]
 
 // 科目の状態と表示用マップ
@@ -313,11 +315,11 @@ const subjectNameById = computed(() => {
 const taskTypes = ['課題', '試験', '補講']
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土']
 
-const emojiOptions = ['📘', '📗', '📙', '📕', '🧪', '⚡', '🧠', '🧮', '📝', '🛠️', '💻', '🌎']
+const emojiOptions = ['??', '??', '??', '??', '??', '?', '??', '??', '??', '???', '??', '??']
 const isSubjectModalOpen = ref(false)
 const isSubjectManageOpen = ref(false)
 const newSubjectName = ref('')
-const newSubjectEmoji = ref(emojiOptions[0] ?? '📘')
+const newSubjectEmoji = ref(emojiOptions[0] ?? '??')
 
 // 予定メモの状態
 const isMemoModalOpen = ref(false)
@@ -465,7 +467,7 @@ const localUpcomingTasks = computed(() => {
 })
 
 const upcomingTasks = computed(() => {
-  return [...localUpcomingTasks.value].slice(0, 3)
+  return [...localUpcomingTasks.value]
 })
 
 const ownedTaskIds = computed(() => new Set(tasks.value.map((task) => task.id)))
@@ -783,7 +785,7 @@ function openSubjectModal() {
   isSubjectManageOpen.value = false
   isSubjectModalOpen.value = true
   newSubjectName.value = ''
-  newSubjectEmoji.value = emojiOptions[0] ?? '📘'
+  newSubjectEmoji.value = emojiOptions[0] ?? '??'
 }
 
 function closeSubjectModal() {
@@ -1580,6 +1582,21 @@ function removeTask(taskId: string) {
   margin: 0;
 }
 
+.taskList-scroll {
+  max-height: min(160px, 50svh);
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+}
+
+.taskList-scroll-upcoming {
+  max-height: min(160px, 40svh);
+}
+
+.taskList-scroll-selected {
+  max-height: min(90px, 60svh);
+}
+
 .taskRow {
   display: flex;
   align-items: center;
@@ -1622,100 +1639,6 @@ function removeTask(taskId: string) {
   border-radius: 999px;
   cursor: pointer;
   font-size: 12px;
-}
-
-.header,
-.card,
-.subjects {
-  animation: fadeUp 420ms ease-out both;
-}
-
-.card:nth-of-type(1) {
-  animation-delay: 80ms;
-}
-
-.card:nth-of-type(2) {
-  animation-delay: 140ms;
-}
-
-.card:nth-of-type(3) {
-  animation-delay: 200ms;
-}
-
-.subjects {
-  animation-delay: 260ms;
-}
-
-.subject-btn {
-  animation: fadeIn 480ms ease-out both;
-}
-
-.subject-btn:nth-child(1) {
-  animation-delay: 280ms;
-}
-
-.subject-btn:nth-child(2) {
-  animation-delay: 320ms;
-}
-
-.subject-btn:nth-child(3) {
-  animation-delay: 360ms;
-}
-
-.subject-btn:nth-child(4) {
-  animation-delay: 400ms;
-}
-
-.subject-btn:nth-child(5) {
-  animation-delay: 440ms;
-}
-
-.subject-btn:nth-child(6) {
-  animation-delay: 480ms;
-}
-
-.subject-btn:nth-child(7) {
-  animation-delay: 520ms;
-}
-
-.subject-btn:nth-child(8) {
-  animation-delay: 560ms;
-}
-
-.subject-btn:nth-child(9) {
-  animation-delay: 600ms;
-}
-
-.subject-btn:nth-child(10) {
-  animation-delay: 640ms;
-}
-
-.subject-btn:nth-child(11) {
-  animation-delay: 680ms;
-}
-
-.subject-btn:nth-child(12) {
-  animation-delay: 720ms;
-}
-
-@keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 @keyframes bubbleIn {
