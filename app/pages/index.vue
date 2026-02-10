@@ -73,7 +73,7 @@
     <!-- 直近の予定 -->
     <section class="card">
       <h2>直近の予定</h2>
-      <p v-if="upcomingTasks.length === 0">まだ予定はないよ！</p>
+    <p v-if="upcomingTasks.length === 0" class="taskEmpty taskEmpty-upcoming">まだ予定はないよ！</p>
       <ul v-else class="taskList taskList-scroll taskList-scroll-upcoming">
         <li
           v-for="task in upcomingTasks"
@@ -127,7 +127,7 @@
     <!-- 選択した日の予定 -->
     <section class="card">
       <h2>{{ selectedLabel }}</h2>
-      <p v-if="selectedDayTasks.length === 0">まだ予定はないよ！</p>
+    <p v-if="selectedDayTasks.length === 0" class="taskEmpty taskEmpty-selected">まだ予定はないよ！</p>
       <ul v-else class="taskList taskList-scroll taskList-scroll-selected">
         <li v-for="task in selectedDayTasks" :key="task.id" class="taskRow" @click="openMemoModal(task)">
           <span class="taskText">
@@ -1609,18 +1609,36 @@ function removeTask(taskId: string) {
 }
 
 .taskList-scroll {
-  max-height: min(160px, 50svh);
   overflow-y: auto;
   padding-right: 4px;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .taskList-scroll-upcoming {
-  max-height: min(160px, 40svh);
+  max-height: 150px;
+  min-height: 150px;
 }
 
 .taskList-scroll-selected {
-  max-height: min(90px, 60svh);
+  max-height: 80px;
+  min-height: 80px;
+}
+
+.taskEmpty {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.taskEmpty-upcoming {
+  min-height: 150px;
+}
+
+.taskEmpty-selected {
+  min-height: 80px;
 }
 
 .taskRow {
@@ -1705,9 +1723,6 @@ function removeTask(taskId: string) {
     align-items: start;
   }
 
-  .subjects {
-    margin-bottom: 0;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
