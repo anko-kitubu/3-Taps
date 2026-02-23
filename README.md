@@ -1,63 +1,52 @@
-﻿# 3-Taps! 課題管理アプリ（Nuxt版）
+﻿# 3-Taps!
 
-大学の授業・レポート・テストなど「やること」を日付ベースで管理するプロトタイプです。
-Figmaで設計したUIを元に、Nuxt + Vue 3で実装しています。
+## GitHub Pages
+- GitHub Pages: https://anko-kitubu.github.io/3-Taps/
+- 依存関係のインストールは不要です。ブラウザで開くだけで利用できます。
 
----
+## 概要
+`3-Taps!` は、日付選択 -> 科目選択 -> 種別選択（課題 / 試験 / 補講）の 3 ステップで予定を登録できる学習タスク管理アプリです。
 
-## 主な機能
+## 主要機能
+- カレンダーで日付を選択し、予定を登録
+- 予定種別（課題 / 試験 / 補講）を色付きドットで可視化
+- 直近の予定（最大3件）を表示
+- 科目の追加・削除（絵文字アイコン付き）
+- 予定メモの追加・更新・削除
+- `localStorage` への自動保存
+- 2画面構成（`/` と `/friends`）
 
-- 月間カレンダー（曜日見出し/前後月移動/当日強調）
-- 日付選択でその日の予定を表示
-- 科目アイコン → 種別（課題 / 試験 / 補講）で予定追加
-- 予定の種類をカレンダーに色付きドットで表示
-- 直近の予定を最大3件表示（今日の予定はハイライト）
-- 科目の追加/削除（アイコン選択）
-- `localStorage` に自動保存
-  - `task-manager-tasks`
-  - `task-manager-subjects`
-- 2画面構成：ホーム(`/`) / 友だち(`/friends`)
-  - 共有機能は現在未実装（表示のみ）
+## 使い方（最短手順）
+1. GitHub Pages の公開URLを開きます。  
+   https://anko-kitubu.github.io/3-Taps/
+2. `ホーム` 画面で日付を選び、科目ボタンを押して種別を選ぶと予定が追加されます。
+3. 予定行をタップするとメモ編集、`削除` ボタンで予定削除ができます。
 
----
+## 動作環境
+- エンドユーザー: `localStorage` が有効なモダンブラウザ
+- 開発者: Node.js 20 / npm
 
 ## 技術スタック
-
 - Nuxt 4
 - Vue 3
 - TypeScript
 - Vite
-- @supabase/supabase-js（共有機能の試作に利用）
+- Supabase JavaScript Client（`@supabase/supabase-js`）
+- GitHub Actions（GitHub Pagesデプロイ）
 
----
+## 注意点
+- データ保存先はブラウザ `localStorage` のみです。ブラウザ変更・端末変更では引き継がれません。
+- 共有機能はコード上に実装がありますが、現在は `shareEnabled = false` のため停止中です（UI表示のみ）。
+- 科目を削除すると、その科目に紐づいた既存予定は残り、表示上は「（削除済み）」になります。
 
-## 動作環境
-
-- Node.js 18+
-
----
-
-## セットアップ
-
+## ローカル開発（必要な場合のみ）
 ```bash
-# 依存関係のインストール
-npm install
-
-# 開発サーバー起動
+npm ci
 npm run dev
 ```
 
-
----
-
-## GitHub Pages デプロイ
-
-- `master` ブランチへ push すると GitHub Actions で自動公開されます。
-- GitHub 側で `Settings > Pages > Source` を `GitHub Actions` に設定してください。
-- 公開URLは `https://anko-kitubu.github.io/3-Taps/` です。
-- リポジトリ名を変更した場合、公開パス（`/3-Taps/` 部分）も変わります。
----
-
 ## ライセンス
+MIT License
 
-このプロジェクトは `MIT License` のもとで公開しています。詳細は `LICENSE` を参照してください。
+## 作者
+- GitHub: `anko-kitubu`
