@@ -46,3 +46,9 @@ npm install
 # 開発サーバー起動
 npm run dev
 ```
+
+---
+
+## ライセンス
+
+このプロジェクトは `MIT License` のもとで公開しています。詳細は `LICENSE` を参照してください。
