@@ -2,6 +2,7 @@
 
 大学の授業・レポート・テストなど「やること」を日付ベースで管理するプロトタイプです。
 Figmaで設計したUIを元に、Nuxt + Vue 3で実装しています。
+Github Pages: https://anko-kitubu.github.io/3-Taps/
 
 ---
 
