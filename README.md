@@ -1,4 +1,4 @@
-# 3-Taps! 課題管理アプリ（Nuxt版）
+﻿# 3-Taps! 課題管理アプリ（Nuxt版）
 
 大学の授業・レポート・テストなど「やること」を日付ベースで管理するプロトタイプです。
 Figmaで設計したUIを元に、Nuxt + Vue 3で実装しています。
@@ -47,6 +47,15 @@ npm install
 npm run dev
 ```
 
+
+---
+
+## GitHub Pages デプロイ
+
+- `master` ブランチへ push すると GitHub Actions で自動公開されます。
+- GitHub 側で `Settings > Pages > Source` を `GitHub Actions` に設定してください。
+- 公開URLは `https://anko-kitubu.github.io/3-Taps/` です。
+- リポジトリ名を変更した場合、公開パス（`/3-Taps/` 部分）も変わります。
 ---
 
 ## ライセンス
