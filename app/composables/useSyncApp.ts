@@ -88,6 +88,62 @@ function mergeRows<T extends { id: string }>(current: T[], incoming: T[]) {
   return Array.from(next.values())
 }
 
+function compareOutboxEntries(a: OutboxEntry, b: OutboxEntry) {
+  if (a.table !== b.table) {
+    return a.table === 'subjects' ? -1 : 1
+  }
+  return a.queued_at.localeCompare(b.queued_at)
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message
+  }
+  return ''
+}
+
+function getErrorCode(error: unknown) {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code
+  }
+  return ''
+}
+
+function getErrorDetails(error: unknown) {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'details' in error &&
+    typeof error.details === 'string'
+  ) {
+    return error.details
+  }
+  return ''
+}
+
+function isSubjectForeignKeySyncError(error: unknown) {
+  const code = getErrorCode(error)
+  const message = getErrorMessage(error)
+  const details = getErrorDetails(error)
+  return (
+    code === '23503' &&
+    (message.includes('tasks_subject_id_fkey') || details.includes('Key is not present in table "subjects"'))
+  )
+}
+
+function formatSyncErrorMessage(error: unknown) {
+  if (isSubjectForeignKeySyncError(error)) {
+    return '科目データの同期順で失敗しました。再同期を試してください。'
+  }
+  return getErrorMessage(error) || '同期に失敗しました。'
+}
+
 function getProfileOwner(profileId: ProfileId, userId: string | null) {
   return userId ?? (profileId === GUEST_PROFILE_ID ? GUEST_USER_ID : '')
 }
@@ -650,7 +706,7 @@ export function useSyncApp() {
     if (!client || !online.value) return
 
     const profileId = createAccountProfileId(currentUserId)
-    const queue = await loadOutbox(profileId)
+    const queue = [...(await loadOutbox(profileId))].sort(compareOutboxEntries)
     if (queue.length === 0) {
       if (activeProfileId.value === profileId) {
         pendingMutations.value = 0
@@ -658,8 +714,17 @@ export function useSyncApp() {
       return
     }
 
-    for (const entry of queue) {
-      const { error } = await client.from(entry.table).upsert(entry.row)
+    const subjectQueue = queue.filter((entry) => entry.table === 'subjects')
+    const taskQueue = queue.filter((entry) => entry.table === 'tasks')
+
+    for (const entry of subjectQueue) {
+      const { error } = await client.from('subjects').upsert(entry.row)
+      if (error) throw error
+      await deleteOutboxEntry(profileId, entry.id)
+    }
+
+    for (const entry of taskQueue) {
+      const { error } = await client.from('tasks').upsert(entry.row)
       if (error) throw error
       await deleteOutboxEntry(profileId, entry.id)
     }
@@ -784,7 +849,7 @@ export function useSyncApp() {
         syncStatus.value = 'idle'
       } catch (error) {
         syncStatus.value = 'error'
-        syncError.value = error instanceof Error ? error.message : '同期に失敗しました。'
+        syncError.value = formatSyncErrorMessage(error)
       }
     })().finally(() => {
       syncPromise = null
