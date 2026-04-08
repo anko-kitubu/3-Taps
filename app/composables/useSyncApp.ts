@@ -286,6 +286,25 @@ export function useSyncApp() {
     return supabaseClient
   }
 
+  function resolveAuthRedirectUrl() {
+    if (import.meta.server) {
+      throw new Error('ログインリンクはブラウザから送信してください。')
+    }
+
+    const configuredRedirectUrl = config.public.authRedirectUrl.trim()
+    if (configuredRedirectUrl) {
+      try {
+        return new URL(configuredRedirectUrl).toString()
+      } catch {
+        throw new Error(
+          'ログイン用の戻り先 URL が不正です。NUXT_PUBLIC_AUTH_REDIRECT_URL に https:// から始まる絶対 URL を設定してください。'
+        )
+      }
+    }
+
+    return new URL(config.app.baseURL || '/', window.location.origin).toString()
+  }
+
   function createDefaultSubjectRows(profileId: ProfileId, userId: string | null, now = isoNow()) {
     const owner = getProfileOwner(profileId, userId)
     return defaultSubjectTemplates.map<SyncedSubject>((subject) => ({
@@ -860,7 +879,7 @@ export function useSyncApp() {
     syncError.value = null
     linkNotice.value = null
     try {
-      const redirectTo = new URL(config.app.baseURL || '/', window.location.origin).toString()
+      const redirectTo = resolveAuthRedirectUrl()
       const { error } = await client.auth.signInWithOtp({
         email: normalizedEmail,
         options: { emailRedirectTo: redirectTo }

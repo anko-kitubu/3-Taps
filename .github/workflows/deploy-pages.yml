@@ -21,6 +21,7 @@ jobs:
       NUXT_APP_BASE_URL: /${{ github.event.repository.name }}/
       NUXT_PUBLIC_SUPABASE_URL: ${{ vars.NUXT_PUBLIC_SUPABASE_URL != '' && vars.NUXT_PUBLIC_SUPABASE_URL || secrets.NUXT_PUBLIC_SUPABASE_URL }}
       NUXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NUXT_PUBLIC_SUPABASE_ANON_KEY != '' && vars.NUXT_PUBLIC_SUPABASE_ANON_KEY || secrets.NUXT_PUBLIC_SUPABASE_ANON_KEY }}
+      NUXT_PUBLIC_AUTH_REDIRECT_URL: ${{ vars.NUXT_PUBLIC_AUTH_REDIRECT_URL != '' && vars.NUXT_PUBLIC_AUTH_REDIRECT_URL || secrets.NUXT_PUBLIC_AUTH_REDIRECT_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

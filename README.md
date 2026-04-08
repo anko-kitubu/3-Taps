@@ -42,7 +42,6 @@
 - 未ログイン時のデータはブラウザ `IndexedDB` に保存されます。
 - ログイン後のデータは Supabase とブラウザ `IndexedDB` に保存されます。
 - ログアウト後も、その端末では直前のデータを表示したまま利用できます。
-- 同期には `NUXT_PUBLIC_SUPABASE_URL` と `NUXT_PUBLIC_SUPABASE_ANON_KEY` の設定が必要です。
 - 友だち共有は個人同期とは分離しており、現在は案内ページのみです。
 - 科目を削除すると、その科目に紐づいた既存予定は残り、表示上は「（削除済み）」になります。
 
@@ -52,10 +51,20 @@ npm ci
 npm run dev
 ```
 
+## 開発・運営者向け設定
+この節は、アプリを自分で開発・デプロイする場合にだけ必要です。公開URLを開いて使うだけの利用者は設定不要です。
+
 ### Supabase セットアップ
 1. `.env.example` を参考に `.env` を作成します。
 2. Supabase SQL Editor で `docs/supabase-sync.sql` を実行します。
-3. `NUXT_PUBLIC_SUPABASE_URL` と `NUXT_PUBLIC_SUPABASE_ANON_KEY` を設定します。
+3. `NUXT_PUBLIC_SUPABASE_URL`、`NUXT_PUBLIC_SUPABASE_ANON_KEY`、`NUXT_PUBLIC_AUTH_REDIRECT_URL` を設定します。
+4. `NUXT_PUBLIC_AUTH_REDIRECT_URL` には本番公開 URL を設定します。GitHub Pages なら `https://anko-kitubu.github.io/3-Taps/` です。
+5. Supabase Dashboard の `Authentication -> URL Configuration` で、`Site URL` と `Additional Redirect URLs` に `NUXT_PUBLIC_AUTH_REDIRECT_URL` と同じ URL を許可します。`http://localhost:3000/` で試すときは、その URL も追加して開発サーバーを起動してください。
+
+### GitHub Pages デプロイ設定
+1. GitHub の `Settings -> Pages` で公開方式を `GitHub Actions` にします。
+2. GitHub の `Settings -> Secrets and variables -> Actions` に `NUXT_PUBLIC_SUPABASE_URL`、`NUXT_PUBLIC_SUPABASE_ANON_KEY`、`NUXT_PUBLIC_AUTH_REDIRECT_URL` を登録します。
+3. `NUXT_PUBLIC_AUTH_REDIRECT_URL` には `https://anko-kitubu.github.io/3-Taps/` を設定します。
 
 ## ライセンス
 MIT License
